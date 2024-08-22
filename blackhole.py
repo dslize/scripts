@@ -41,9 +41,10 @@ class TorrentFileInfo():
             self.folderPathCompleted = folderPathCompleted
 
     class TorrentInfo():
-        def __init__(self, isTorrentOrMagnet, isDotTorrentFile) -> None:
+        def __init__(self, isTorrentOrMagnet, isDotTorrentFile, isDotNzbFile) -> None:
             self.isTorrentOrMagnet = isTorrentOrMagnet
             self.isDotTorrentFile = isDotTorrentFile
+            self.isDotNzbFile = IsDotNzbFile
 
     def __init__(self, filename, isRadarr) -> None:
         print('filename:', filename)
@@ -51,13 +52,14 @@ class TorrentFileInfo():
         uniqueId = str(uuid.uuid4())[:8]  # Generate a unique identifier
         isDotTorrentFile = filename.casefold().endswith('.torrent')
         isTorrentOrMagnet = isDotTorrentFile or filename.casefold().endswith('.magnet')
+        isDotNzbFile = filename.casefold().endswith('.nzb')
         filenameWithoutExt, ext = os.path.splitext(filename)
         filePath = os.path.join(baseBath, filename)
         filePathProcessing = os.path.join(baseBath, 'processing', f"{filenameWithoutExt}_{uniqueId}{ext}")
         folderPathCompleted = os.path.join(baseBath, 'completed', filenameWithoutExt)
         
         self.fileInfo = self.FileInfo(filename, filenameWithoutExt, filePath, filePathProcessing, folderPathCompleted)
-        self.torrentInfo = self.TorrentInfo(isTorrentOrMagnet, isDotTorrentFile)
+        self.torrentInfo = self.TorrentInfo(isTorrentOrMagnet, isDotTorrentFile, isDotNzbFile)
 
 def getPath(isRadarr, create=False):
     baseWatchPath = blackhole['baseWatchPath']
@@ -125,7 +127,7 @@ def copyFiles(file: TorrentFileInfo, folderPathMountTorrent, arr: Arr):
             time.sleep(1)
             if count == 180:
                 print('copyCount > 180')
-                discordError(f"{file.fileInfo.filenameWithoutExt} copy attempt acount > 180", "Shortcut has not finished importing yet")
+                discordError(f"{file.fileInfo.filenameWithoutExt} copy attempt count > 180", "Shortcut has not finished importing yet")
 
     except:
         e = traceback.format_exc()
@@ -279,7 +281,7 @@ async def processFile(file: TorrentFileInfo, arr: Arr, isRadarr):
         time.sleep(.1) # Wait before processing the file in case it isn't fully written yet.
         os.renames(file.fileInfo.filePath, file.fileInfo.filePathProcessing)
 
-        with open(file.fileInfo.filePathProcessing, 'rb' if file.torrentInfo.isDotTorrentFile else 'r') as f:
+        with open(file.fileInfo.filePathProcessing, 'rb' if (file.torrentInfo.isDotTorrentFile or file.torrentInfo.isDotNzbFile) else 'r') as f:
             fileData = f.read()
             f.seek(0)
             
@@ -287,7 +289,8 @@ async def processFile(file: TorrentFileInfo, arr: Arr, isRadarr):
             if realdebrid['enabled']:
                 torrentConstructors.append(RealDebridTorrent if file.torrentInfo.isDotTorrentFile else RealDebridMagnet)
             if torbox['enabled']:
-                torrentConstructors.append(TorboxTorrent if file.torrentInfo.isDotTorrentFile else TorboxMagnet)
+                filetorrentInfo = file.torrentInfo
+                torrentConstructors.append(TorboxTorrent if filetorrentInfo.isDotTorrentFile else (TorboxNzb if filetorrentInfo.isDotNzbFile else TorboxMagnet))
 
             onlyLargestFile = isRadarr or bool(re.search(r'S[\d]{2}E[\d]{2}(?![\W_][\d]{2}[\W_])', file.fileInfo.filename))
             if not blackhole['failIfNotCached']:
@@ -339,7 +342,7 @@ async def fail(torrent: TorrentBase, arr: Arr):
 def getFiles(isRadarr):
     print('getFiles')
     files = (TorrentFileInfo(filename, isRadarr) for filename in os.listdir(getPath(isRadarr)) if filename not in ['processing', 'completed'])
-    return [file for file in files if file.torrentInfo.isTorrentOrMagnet]
+    return [file for file in files if file.torrentInfo.isTorrentOrMagnet or file.torrentInfo.isDotNzbFile]
 
 async def on_created(isRadarr):
     print("Enter 'on_created'")

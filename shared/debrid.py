@@ -153,6 +153,10 @@ class TorrentBase(ABC):
     def _addMagnetFile(self):
         pass
 
+    @abstractmethod
+    def _addNzbFile(self):
+        pass
+
     def _enforceId(self):
         if not self.id:
             raise Exception("Id is required. Must be acquired via successfully running submitTorrent() first.")
@@ -343,6 +347,7 @@ class Torbox(TorrentBase):
         self.mountTorrentsPath = torbox["mountTorrentsPath"]
         self.submittedTime = None
         self.lastInactiveCheck = None
+        self.apiprefix = "torrents" if self.file.torrentInfo.isTorrentOrMagnet else "usenet"
 
         userInfoRequest = retryRequest(
             lambda: requests.get(urljoin(torbox['host'], "user/me"), headers=self.headers),
@@ -371,7 +376,7 @@ class Torbox(TorrentBase):
 
             instantAvailabilityRequest = retryRequest(
                 lambda: requests.get(
-                    urljoin(torbox['host'], "torrents/checkcached"),
+                    urljoin(torbox['host'], f"{self.apiprefix}/checkcached"),
                     headers=self.headers,
                     params={'hash': torrentHash, 'format': 'object'}
                 ),
@@ -399,7 +404,8 @@ class Torbox(TorrentBase):
                 return None
             
             currentTime = datetime.now()
-            if (currentTime - self.submittedTime).total_seconds() < 300:
+            # inactivecheck api endpoint only exists for torrents since usenet downloads cannot be inactive (?)
+            if (currentTime - self.submittedTime).total_seconds() < 300 and self.file.torrentInfo.isTorrentOrMagnet:
                 if not self.lastInactiveCheck or (currentTime - self.lastInactiveCheck).total_seconds() > 5:
                     inactiveCheckUrl = f"https://relay.torbox.app/v1/inactivecheck/torrent/{self.authId}/{self.id}"
                     retryRequest(
@@ -409,7 +415,7 @@ class Torbox(TorrentBase):
                     self.lastInactiveCheck = currentTime
             for _ in range(60):
                 infoRequest = retryRequest(
-                    lambda: requests.get(urljoin(torbox['host'], "torrents/mylist"), headers=self.headers),
+                    lambda: requests.get(urljoin(torbox['host'], f"{self.apiprefix}/mylist"), headers=self.headers),
                     print=self.print
                 )
                 if infoRequest is None:
@@ -432,8 +438,15 @@ class Torbox(TorrentBase):
     def delete(self):
         self._enforceId()
 
+        controlendpoint = "torrents/controltorrent" if self.file.torrentInfo.isTorrentOrMagnet else "usenet/controlusenetdownload"
+        data = {'operation': "Delete"}
+        if self.file.torrentInfo.isTorrentOrMagnet:
+            data['torrent_id'] = self.id
+        else:
+            data['usenet_id'] = self.id
+        
         deleteRequest = retryRequest(
-            lambda: requests.delete(urljoin(torbox['host'], "torrents/controltorrent"), headers=self.headers, data={'torrent_id': self.id, 'operation': "Delete"}),
+            lambda: requests.delete(urljoin(torbox['host'], controlendpoint), headers=self.headers, data=data),
             print=self.print
         )
         return not not deleteRequest
@@ -451,8 +464,9 @@ class Torbox(TorrentBase):
         return folderPathMountTorrent
 
     def _addFile(self, data=None, files=None):
+        createendpoint = "torrents/createtorrent" if self.file.torrentInfo.isTorrentOrMagnet else "usenet/createusenetdownload"
         request = retryRequest(
-            lambda: requests.post(urljoin(torbox['host'], "torrents/createtorrent"), headers=self.headers, data=data, files=files),
+            lambda: requests.post(urljoin(torbox['host'], createendpoint), headers=self.headers, data=data, files=files),
             print=self.print
         )
         if request is None:
@@ -464,7 +478,10 @@ class Torbox(TorrentBase):
         if response.get('detail') == 'queued':
             return None
         
-        self.id = response['data']['torrent_id']
+        if self.file.torrentInfo.isTorrentOrMagnet:
+            self.id = response['data']['torrent_id']
+        else:
+            self.id = response['data']['usenetdownload_id']
 
         return self.id
 
@@ -475,6 +492,11 @@ class Torbox(TorrentBase):
 
     def _addMagnetFile(self):
         return self._addFile(data={'magnet': self.fileData})
+
+    def _addNzbFile(self):
+        namenzb = self.f.name.split('/')[-1]
+        files = {'file': (namenzb, self.f, 'application/x-nzb')}
+        return self._addFile(files=files)
 
     def _normalize_status(self, status, download_finished):
         if download_finished:
@@ -514,6 +536,19 @@ class Magnet(TorrentBase):
     def addTorrent(self):
         return self._addMagnetFile()
 
+class Nzb(TorrentBase):
+    def getHash(self):
+        
+        #TODO: Is this the correct hash function that torbox also uses?
+        if not self._hash:
+            import bencode3
+            self._hash = hashlib.sha1(bencode3.bencode(bencode3.bdecode(self.fileData)['info'])).hexdigest()
+        
+        return self._hash
+
+    def addTorrent(self):
+        return self._addNzbFile()
+
 
 class RealDebridTorrent(RealDebrid, Torrent):
     pass
@@ -525,4 +560,7 @@ class TorboxTorrent(Torbox, Torrent):
     pass
 
 class TorboxMagnet(Torbox, Magnet):
+    pass
+
+class TorboxNzb(Torbox, Nzb):
     pass
