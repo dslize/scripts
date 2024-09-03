@@ -539,10 +539,10 @@ class Magnet(TorrentBase):
 class Nzb(TorrentBase):
     def getHash(self):
         
-        #TODO: Is this the correct hash function that torbox also uses?
+        #TODO: Verify that torbox uses md5 hash for nzb files
         if not self._hash:
             import bencode3
-            self._hash = hashlib.sha1(bencode3.bencode(bencode3.bdecode(self.fileData)['info'])).hexdigest()
+            self._hash = hashlib.md5(self.fileData).hexdigest()
         
         return self._hash
 
