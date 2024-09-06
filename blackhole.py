@@ -12,7 +12,7 @@ from datetime import datetime
 from shared.discord import discordError, discordUpdate
 from shared.shared import realdebrid, torbox, blackhole, plex, checkRequiredEnvs
 from shared.arr import Arr, Radarr, Sonarr
-from shared.debrid import TorrentBase, RealDebridTorrent, RealDebridMagnet, TorboxTorrent, TorboxMagnet
+from shared.debrid import TorrentBase, RealDebridTorrent, RealDebridMagnet, TorboxTorrent, TorboxMagnet, TorboxNzb
 
 _print = print
 
@@ -44,7 +44,7 @@ class TorrentFileInfo():
         def __init__(self, isTorrentOrMagnet, isDotTorrentFile, isDotNzbFile) -> None:
             self.isTorrentOrMagnet = isTorrentOrMagnet
             self.isDotTorrentFile = isDotTorrentFile
-            self.isDotNzbFile = IsDotNzbFile
+            self.isDotNzbFile = isDotNzbFile
 
     def __init__(self, filename, isRadarr) -> None:
         print('filename:', filename)
