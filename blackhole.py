@@ -189,7 +189,14 @@ async def processTorrent(torrent: TorrentBase, file: TorrentFileInfo, arr: Arr) 
 
                     multiSeasonMatch = re.search(multiSeasonRegexCombined, file.fileInfo.filenameWithoutExt)
 
-                    for root, dirs, files in os.walk(folderPathMountTorrent):
+                    if os.path.split(folderPathMountTorrent)[1] == 'Unknown NZB Name':
+                        # When Torbox cannot deobfuscate the nzb name, only symlink to the specific files from a download, not the whole folder
+                        splitpaths = [os.path.split(file['name']) for file in (torrent.getInfo())['files']]
+                        walk = [(os.path.join(torrent.mountTorrentsPath, prefix), [], [filename]) for prefix, filename in splitpaths]
+                    else:
+                        walk = os.walk(folderPathMountTorrent)
+
+                    for root, dirs, files in walk:
                         relRoot = os.path.relpath(root, folderPathMountTorrent)
                         for filename in files:
                             # Check if the file is accessible
